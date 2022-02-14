@@ -1,0 +1,367 @@
+import init.${ro.hardware}.usb.rc
+
+on init
+    start watchdogd
+
+    # See storage config details at http://source.android.com/tech/storage/
+    mkdir /mnt/shell/emulated 0700 shell shell
+    mkdir /storage/emulated 0555 root root
+
+    # Enable bus frequency scaling for power savings
+    write /sys/devices/soc0/soc.2/busfreq.3/enable 1
+
+    export EXTERNAL_STORAGE /storage/emulated/legacy
+    export EMULATED_STORAGE_SOURCE /mnt/shell/emulated
+    export EMULATED_STORAGE_TARGET /storage/emulated
+
+    # Support legacy paths
+    symlink /storage/emulated/legacy /sdcard
+    symlink /storage/emulated/legacy /mnt/sdcard
+    symlink /storage/emulated/legacy /storage/sdcard0
+    symlink /mnt/shell/emulated/0 /storage/emulated/legacy
+
+    # setup the global environment
+    export SHM_MOUNTPOINT /mnt/shm
+    export LIGHTSENSOR_PATH /sys/class/i2c-adapter/i2c-1/1-0044
+    export VPU_FW_PATH /system/lib/firmware/vpu
+    export CODEC_SHM_PATH /mnt/shm
+    export CORE_REGISTER_FILE /system/etc/core_register
+    export COMPONENT_REGISTER_FILE /system/etc/component_register
+    export CONTENTPIPE_REGISTER_FILE /system/etc/contentpipe_register
+    
+    # disable cursor blink for fbcon, if no splash screen support
+    write /sys/class/graphics/fbcon/cursor_blink 0
+
+    # deattch the fbcon as hdmi hotplug conflict with fbcon
+    write /sys/class/vtconsole/vtcon1/bind 0
+
+
+on early-boot
+    # Insmod Touch Driver
+    insmod /system/lib/modules/zforce2.ko
+
+    # Disable hw vsync
+    setprop debug.sf.no_hw_vsync 1
+
+    # Load Waveform and EPDC drivers
+    mount rootfs rootfs / rw remount
+    mkdir /mnt/wfm 0700 root root
+    restorecon_recursive /mnt/wfm
+    restorecon_recursive /lib
+    chmod 0750 /system/bin/epdc_init.sh
+    start epdcinit
+    wait /lib/firmware/imx/epdc_EANAB.fw
+    mount rootfs rootfs / ro remount
+    insmod /system/lib/modules/mxc_epdc_eink.ko
+    insmod /system/lib/modules/mxc_epdc_fb.ko
+    setprop ro.powermon.update_interval 300
+
+    insmod /system/lib/modules/bcmdhd.ko
+
+on boot
+    # Set permission for IIM node
+    symlink /dev/mxs_viim /dev/mxc_mem
+
+    # Enable Tethering in the Settings
+    setprop ro.tether.denied false
+
+    # 3D acceleration property
+    setprop debug.sf.showfps    0
+    setprop debug.sf.enable_hgl 0
+    setprop debug.egl.hw	0
+
+    setprop hwc.stretch.filter  1
+    setprop hwc.enable_dither   1
+
+    # Disable OpenGL Renderer on 6sl_evk
+    setprop sys.viewroot.hw false
+
+    # fsl omx graphic manager media framework property
+    #setprop media.omxgm.enable-player 1
+    #setprop media.omxgm.enable-record 0
+    #setprop media.omxgm.enable-scan 1
+    #setprop rw.VIDEO_RENDER_NAME video_render.surface
+
+    #Define the config for dual camera
+    #setprop camera.disable_zsl_mode 1
+    #For landscape mode, orient is 0
+    #For portrait mode, orient is 90
+    #the android before honycomb are all in portrait mode
+    #setprop back_camera_name csi
+    #setprop back_camera_orient 0
+    #setprop front_camera_name uvc
+    #setprop front_camera_orient 0
+
+    # Tweak the mmc device read ahead buffer size
+    write /sys/block/mmcblk0/queue/read_ahead_kb 2048
+    write /sys/block/mmcblk1/queue/read_ahead_kb 2048
+
+    # ALSA mixer naming define
+    setprop alsa.mixer.playback.master Playback
+    setprop alsa.mixer.capture.master Capture
+    setprop alsa.mixer.playback.speaker Playback
+    setprop alsa.mixer.playback.headset Headphone
+    setprop alsa.mixer.capture.headset Capture
+
+    # Prepare for wifi
+    setprop wifi.interface wlan0
+    setprop wifi.ap.interface wlan0
+
+    #clear wakealarm on startup
+    write /sys/class/rtc/rtc0/wakealarm 0
+
+    # Disable vsync for choreographer
+    setprop debug.choreographer.vsync 0 
+
+    # Prepare for bluetooth
+    chmod 665 /sys/class/rfkill/rfkill0/state
+    chown bluetooth bluetooth /sys/class/rfkill/rfkill0/state
+    write /sys/class/rfkill/rfkill0/state 0
+
+    # Prepare for RIL
+    setprop gsm.ril.delay 15
+    setprop ro.ril.wake_lock_timeout 300
+
+    # Set rotation to 270 to cofigure as portrait mode
+    #setprop ro.sf.hwrotation 0
+
+    # Set the density to 160dpi for 800x600 eink panel
+    setprop ro.sf.lcd_density 160
+
+    # Set time of device to build time in case proper time not set by network
+    start settime
+
+
+on property:ro.debuggable=1
+    start console
+
+#  Enable adb security for JB4.2.2
+    setprop ro.adb.secure 0
+
+    # Set OpenGLES version
+    # setprop ro.opengles.version 131072
+
+    # disable animation for eink
+    setprop ro.product.display eink
+
+    setprop ro.kernel.qemu 1
+    #setprop debug.sf.nobootanimation 1
+
+    # Set extsd access permission
+    setprop persist.sampling_profiler 1
+
+    # Set GPU 3D minimum clock to 8/64
+    write /sys/bus/platform/drivers/galcore/gpu3DMinClock 8
+
+# change for FSL specific service
+    chown root system /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+    chmod 0664 /sys/devices/system/cpu/cpu0/cpufreq/scaling_max_freq
+    chown root system /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+    chmod 0664 /sys/devices/system/cpu/cpu0/cpufreq/scaling_min_freq
+    chown root system /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+    chmod 0664 /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+    chown root system /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_cur_freq
+    chmod 0440 /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_cur_freq
+    chown root system /sys/devices/system/cpu/cpu0/cpufreq/scaling_available_frequencies
+    chown root system /sys/devices/system/cpu/cpu0/online
+    chmod 0664 /sys/devices/system/cpu/cpu0/online
+    chown root system /sys/devices/system/cpu/cpu1/online
+    chmod 0664 /sys/devices/system/cpu/cpu1/online
+    chown root system /sys/devices/system/cpu/cpu2/online
+    chmod 0664 /sys/devices/system/cpu/cpu2/online
+    chown root system /sys/devices/system/cpu/cpu3/online
+    chmod 0664 /sys/devices/system/cpu/cpu3/online
+
+    # prepare for ril
+    setprop gsm.ril.delay 15
+    setprop ro.ril.wake_lock_timeout 300
+
+    # Default backlight device
+    setprop hw.backlight.dev "pwm-backlight.0"
+    # Chmod/chown FSL specific sys entry
+    chown system system /sys/class/backlight/pwm-backlight.0/brightness
+    chmod 0660 /sys/class/backlight/pwm-backlight.0/brightness
+
+
+    # No bluetooth hardware present
+    setprop wlan.interface wlan0
+
+# mount the debugfs
+    mount debugfs none /sys/kernel/debug/
+
+on property:sys.boot_completed=1
+# Set default CPU frequency governor
+# Set timer 40ms, min sample 60ms,hispeed at cpufreq MAX freq in freq_table at load 40%
+    write /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor interactive
+    write /sys/devices/system/cpu/cpufreq/interactive/go_maxspeed_load 80
+    write /sys/devices/system/cpu/cpufreq/interactive/timer_rate 40000
+    write /sys/devices/system/cpu/cpufreq/interactive/min_sample_time 60000
+    write /sys/devices/system/cpu/cpufreq/interactive/go_hispeed_load 40
+    #write /sys/devices/system/cpu/cpufreq/interactive/hispeed_freq 792000
+    setprop persist.last.build.number ${ro.build.version.number}
+    #property to indicate that software has support for unified booot
+    setprop persist.bootanim.unifiedboot 1
+
+# Enable additional runtime kernel debug options (if needed)
+    start enable_kdebugs
+
+# change interactive atrrubuties permissions when interactive is actived
+on property:sys.interactive="active"
+    chown system root /sys/devices/system/cpu/cpufreq/interactive/timer_rate
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/timer_rate
+    chown system root /sys/devices/system/cpu/cpufreq/interactive/min_sample_time
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/min_sample_time
+    chown system root /sys/devices/system/cpu/cpufreq/interactive/hispeed_freq
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/hispeed_freq
+    chown system root /sys/devices/system/cpu/cpufreq/interactive/go_hispeed_load
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/go_hispeed_load
+    chown system root /sys/devices/system/cpu/cpufreq/interactive/above_hispeed_delay
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/above_hispeed_delay
+    chown system root /sys/devices/system/cpu/cpufreq/interactive/boost
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/boost
+    chown system root /sys/devices/system/cpu/cpufreq/interactive/boostpulse
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/boostpulse
+    chown system root /sys/devices/system/cpu/cpufreq/interactive/input_boost
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/input_boost
+    chown system system /sys/devices/system/cpu/cpufreq/interactive/boostpulse_duration
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/boostpulse_duration
+    chown system system /sys/devices/system/cpu/cpufreq/interactive/io_is_busy
+    chmod 0660 /sys/devices/system/cpu/cpufreq/interactive/io_is_busy
+
+service p2p_supplicant /system/bin/wpa_supplicant \
+   -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
+   -puse_p2p_group_interface=1 \
+   -O/data/misc/wifi/sockets \
+   -e/data/misc/wifi/entropy.bin \
+   -d -g@android:wpa_wlan0
+    class late_start
+    socket wpa_wlan0 dgram 660 wifi wifi
+    disabled
+    oneshot
+
+service wpa_supplicant /system/bin/wpa_supplicant \
+    -iwlan0 -Dnl80211 -c/data/misc/wifi/wpa_supplicant.conf \
+    -O/data/misc/wifi/sockets \
+    -e/data/misc/wifi/entropy.bin -g@android:wpa_wlan0
+    socket wpa_wlan0 dgram 660 wifi wifi
+    class late_start
+    disabled
+    oneshot
+
+service dhcpcd_wlan0 /system/bin/dhcpcd -aABDKL
+    class main
+    disabled
+    oneshot
+
+service dhcpcd_p2p /system/bin/dhcpcd -aABKL
+    class main
+    disabled
+    oneshot
+
+service dhcpcd_eth0 /system/bin/dhcpcd -ABKL
+    class main
+    disabled
+    oneshot
+
+service dhcpcd_bt-pan /system/bin/dhcpcd -ABKL
+    class main
+    disabled
+    oneshot
+
+service iprenew_wlan0 /system/bin/dhcpcd -n
+    class main
+    disabled
+    oneshot
+
+service iprenew_p2p /system/bin/dhcpcd -n
+    class main
+    disabled
+    oneshot
+
+service iprenew_eth0 /system/bin/dhcpcd -n
+    class main
+    disabled
+    oneshot
+
+service iprenew_bt-pan /system/bin/dhcpcd -n
+    class main
+    disabled
+    oneshot
+
+service hostapd /system/bin/hostapd /data/misc/wifi/hostapd.conf
+    socket hostapd_wlan0 dgram 660 root wifi
+    user root
+    group wifi
+    oneshot
+    disabled
+
+service rtl_hostapd /system/bin/hostapd /data/misc/wifi/hostapd.conf
+    socket hostapd_wlan0 dgram 660 root wifi
+    user root
+    group wifi
+    oneshot
+    disabled
+
+service ril-daemon /system/bin/rild
+    class main
+    socket rild stream 660 root radio
+   socket rild-debug stream 660 radio system
+    socket rild-ppp stream 660 radio system
+    user root
+    group radio cache inet misc audio sdcard_rw log
+
+service pppd_gprs /etc/ppp/init.gprs-pppd
+    class main
+    user root
+    group radio cache inet misc
+    disabled
+    oneshot
+
+service wifi_mac /system/bin/sh /system/etc/check_wifi_mac.sh
+    class late_start
+    oneshot
+
+service epdcinit /system/bin/epdc_init.sh
+    user root
+    disabled
+    oneshot
+
+# Set build time if proper time is not set by network during boot up
+service settime /system/bin/set_time.sh
+    user root
+    disabled
+    oneshot
+
+# virtual sdcard daemon running as media_rw (1023)
+# default 4 threads have better performance to 2 threads.
+service sdcard /system/bin/sdcard -l -t4 /data/media /mnt/shell/emulated 1023 1023
+    class late_start
+
+on fs
+# mount ext4 partitions
+    mount_all /fstab.freescale
+
+# mount fonts as a filesystem compressed using squashfs
+#    mkdir /mnt/sqfs 0771 system system
+#    mount squashfs loop@/system/sqfs/container.sqfs /mnt/sqfs wait ro context=u:object_r:squashfs_file:s0
+
+on post-fs
+    # Turn on swap
+    swapon_all /fstab.freescale
+
+    # Swap in only 1 page at a time
+    write /proc/sys/vm/page-cluster 0
+
+on post-fs-data
+    mkdir /data/media 0770 media_rw media_rw
+    chown media_rw media_rw /data/media
+
+    # Create the directories used by the Wireless subsystem
+    mkdir /data/misc/wifi 0770 wifi wifi
+    mkdir /data/misc/wifi/sockets 0770 wifi wifi
+    mkdir /data/misc/dhcp 0770 dhcp wifi
+    mkdir /data/misc/wifi/wpa_supplicant 0770 wifi wifi
+    chmod 0660 /data/misc/wifi/wpa_supplicant.conf
+    chmod 0660 /data/misc/wifi/p2p_supplicant.conf
+
+    mkdir /data/tombstones 0771 system system
